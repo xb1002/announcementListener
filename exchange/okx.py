@@ -45,15 +45,14 @@ class OKXAnnouncementSource(AnnouncementSource):
         初始化 OKX 公告源
         
         Args:
-            section_paths: 要监听的公告分类路径列表，默认监听 latest 和 delistings
+            section_paths: 要监听的公告分类路径列表，默认监听 latest
             lang: 语言代码 (zh-hans, zh-hant, en 等)
             timeout: API请求超时时间（秒）
         """
         if section_paths is None:
-            # 默认监听最新公告和退市公告
+            # 默认监听最新公告
             self.section_paths = [
                 self.SECTION_PATHS["latest"],
-                self.SECTION_PATHS["delistings"]
             ]
         else:
             self.section_paths = section_paths
