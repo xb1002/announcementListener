@@ -21,9 +21,14 @@ from feishu import FeishuNotifier
 from core.model import RawAnnouncement, Announcement
 
 # 导入交易所
+from exchange.binance import BinanceAnnouncementSource
+from exchange.okx import OKXAnnouncementSource
 from exchange.gate import GateAnnouncementSource
 from exchange.mexc import MexcAnnouncementSource
 from exchange.huobi import HuobiAnnouncementSource
+from exchange.bybit import BybitAnnouncementSource
+from exchange.bitget import BitgetAnnouncementSource
+from exchange.coinex import CoinExAnnouncementSource
 
 
 class AnnouncementFilter:
@@ -106,9 +111,14 @@ class AnnouncementMonitor:
         
         # 配置交易所列表
         self.sources = [
+            BinanceAnnouncementSource(),
+            OKXAnnouncementSource(),
             GateAnnouncementSource(),
             MexcAnnouncementSource(),
             HuobiAnnouncementSource(),
+            BybitAnnouncementSource(),
+            BitgetAnnouncementSource(),
+            CoinExAnnouncementSource(),
         ]
         
         print(f"[交易所] 已配置 {len(self.sources)} 个交易所")
