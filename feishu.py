@@ -169,6 +169,28 @@ class FeishuNotifier(Notifier):
         except IOError as e:
             print(f"[错误] 清空历史记录失败: {e}")
     
+    def initial_hashes(self, announcements: list[Announcement]) -> None:
+        """
+        初始化历史记录，批量添加现有公告的 hash
+        
+        用于首次运行时，将已存在的公告标记为已推送，避免重复推送。
+        
+        Args:
+            announcements: 公告列表
+        """
+        if not announcements:
+            print("[初始化] 没有公告需要初始化")
+            return
+        
+        added_count = 0
+        for ann in announcements:
+            if ann.hash not in self.sent_hashes:
+                self.sent_hashes.add(ann.hash)
+                self._save_history(ann.hash)
+                added_count += 1
+        
+        print(f"[初始化] 已添加 {added_count} 条公告到历史记录")
+    
     def get_stats(self) -> dict:
         """
         获取统计信息
@@ -196,7 +218,30 @@ if __name__ == "__main__":
         print("请设置环境变量 FEISHU_WEBHOOK_URL 或传入 webhook_url 参数")
         exit(1)
     
-    # 创建测试公告
+    # 首次运行时，初始化已有公告（避免重复推送）
+    existing_announcements = [
+        Announcement(
+            exchange="Binance",
+            title="币安已有公告 1",
+            announcement_time=datetime.fromisoformat("2024-05-01T10:00:00+00:00"),
+            url="https://www.binance.com/zh-CN/support/announcement/old-1",
+            tag="历史公告"
+        ),
+        Announcement(
+            exchange="Binance",
+            title="币安已有公告 2",
+            announcement_time=datetime.fromisoformat("2024-05-02T10:00:00+00:00"),
+            url="https://www.binance.com/zh-CN/support/announcement/old-2",
+            tag="历史公告"
+        ),
+    ]
+    
+    # 如果是首次运行，初始化历史记录
+    if notifier.get_stats()["total_sent"] == 0:
+        print("检测到首次运行，初始化历史记录...")
+        notifier.initial_hashes(existing_announcements)
+    
+    # 创建新公告进行测试
     test_announcement = Announcement(
         exchange="Binance",
         title="币安将上线 TEST/USDT 交易对",
