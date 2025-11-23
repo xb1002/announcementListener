@@ -254,13 +254,7 @@ class AnnouncementMonitor:
         announcements = [self.tagger.tag(raw) for raw in raw_announcements]
         
         # 初始化历史（标记为已推送，避免首次运行时大量推送）
-        if self.notifier.get_stats()["total_sent"] == 0:
-            print("[初始化] 标记现有公告为已推送...")
-            self.notifier.initial_hashes(announcements)
-        else:
-            print("[初始化] 已有历史记录，跳过初始化")
-        
-        print()
+        self.notifier.initial_hashes(announcements)
     
     def run_once(self) -> None:
         """执行一次监听循环"""

@@ -56,7 +56,8 @@ class FeishuNotifier(Notifier):
         
         # 检查是否已经推送过
         if ann.hash in self.sent_hashes:
-            print(f"[跳过] 公告已推送过: {ann.title[:30]}...")
+            # print(f"[跳过] 公告已推送过: {ann.title[:30]}...")
+            # 跳过打印信息以避免循环日志过多
             return
         
         # 构建消息内容
