@@ -13,82 +13,205 @@
 #   - patterns: 正则表达式列表（满足任意一个即可）
 #   - case_sensitive: 是否区分大小写（可选，默认 false）
 
+# ------------------------------------------------------------
+# 标签匹配规则（六大类）
+# ------------------------------------------------------------
 tag_rules:
-  # 下架/退市（优先级更高，避免被 listing 误匹配）
+
+  # 1) 下架退市（优先级最高）
   - tag: "下架退市"
     case_sensitive: false
     patterns:
+      # 中文
       - "下架"
       - "退市"
-      - "delisting"
-      - "delist"
-      - "removal.*trading"
-      - "suspend.*trading"
-      - "停止.*交易"
-  
-  # 新币上线
+      - "下线(交易对|合约|币对|币种|杠杆代币)?"
+      - "移除(现货|合约|交易对|币对)?"
+      - "停止(支持|交易|服务)"
+      - "终止(支持|交易|服务)"
+      - "取消.*(交易|合约)"
+      # 英文
+      - "\\bdelist\\b"
+      - "\\bdelisting\\b"
+      - "will\\s+delist"
+      - "to\\s+be\\s+delisted"
+      - "remove.*(trading\\s*pairs?|spot\\s*pairs?|contract|perpetual|futures)"
+      - "discontinu(e|ing)\\s+support"
+      - "terminate.*(trading|contract|perpetual|futures)"
+      - "trading\\s*pairs?\\s+(will\\s+be\\s+)?removed"
+      # 补充
+      - "\\bremoval\\b"
+      - "removal\\s+of\\s+(spot\\s+)?trading\\s+pairs?"
+      - "notice\\s+of\\s+removal"
+      - "暂停.*(充提|充值|提币).*(交易|交易服务)"
+      - "暂停.*交易.*服务"
+      - "suspend.*(deposit|withdrawal).*trading"
+
+  # 2) 新币上线
   - tag: "新币上线"
     case_sensitive: false
     patterns:
-      - "上线.*交易对"
-      - "will list"
-      - "(?<!de)listing"  # 排除 delisting
-      - "new.*listing"
-      - "新币"
-      - "上市"
-      - "launch.*trading"
-      - "opens.*trading"
-  
-  # 维护升级
-  - tag: "维护升级"
+      # 中文
+      - "上线(.*)?(现货|合约|永续|杠杆|交易对|币对|交易)"
+      - "上架(.*)?(现货|合约|永续|交易对|币对)?"
+      - "新增(.*)?(交易对|币对|品种|合约|永续)"
+      - "开放(.*)?(现货|合约|永续)?交易"
+      - "开启(.*)?交易"
+      - "新币上线"
+      # 英文（避免吃到 delisting）
+      - "will\\s+list\\b"
+      - "(?<!de)listing\\b"
+      - "list\\s+.*for\\s+(spot|margin|futures|perpetual)\\s+trading"
+      - "launch\\s+.*(perpetual|futures|spot)\\s+trading"
+      - "opens?\\s+.*trading"
+      - "to\\s+list\\b"
+      - "new\\s+.*listed"
+      # 补充
+      - "永续合约.*上线"
+      - "正式上线"
+      - "合约.*上线"
+      - "将于.*上线"
+      - "上线\\s*[A-Z0-9]"
+      - "postpone.*launch"
+      - "(延迟|推迟|暂缓).*(上线|上架|launch)"
+      - "will\\s+postpone\\s+the\\s+launch"
+
+  # 3) 参数调整
+  - tag: "参数调整"
     case_sensitive: false
     patterns:
-      - "维护"
-      - "升级"
-      - "maintenance"
-      - "upgrade"
-      - "system.*update"
-      - "暂停.*充提"
-      - "suspend.*deposit"
-      - "suspend.*withdrawal"
-  
-  # 空投/活动
-  - tag: "空投活动"
+      # 中文：更偏“规则/参数/上限/费率/精度/风控”
+      - "(参数|规则|机制).*(调整|变更|更新)"
+      - "杠杆(倍数|档位|上限).*(调整|变更|更新)"
+      - "资金费率.*(调整|变更|更新)"
+      - "费率.*(调整|变更|更新)"
+      - "结算频率.*调整"
+      - "风险限额.*调整"
+      - "风控限额.*调整"
+      - "持仓(上限|限额|限额单位).*(调整|变更|更新)"
+      - "精度.*调整"
+      - "抵押率.*(调整|更新)"
+      - "保证金(模式|率|比例).*(调整|更新|变更)"
+      - "手续费.*(调整|更新)"
+      - "利率.*(调整|更新)"
+      # 英文
+      - "\\badjust(ment|ed)?\\b.*(risk\\s*limit|leverage|funding\\s*rate|precision|position\\s*limit|collateral\\s*ratio|margin|fee|interest)"
+      - "risk\\s*limit\\s*adjustment"
+      - "leverage\\s*(increase|decrease|adjustment|update)"
+      - "funding\\s*rate\\s*(adjustment|update|change)"
+      - "settlement\\s*frequency\\s*(adjustment|change)"
+      - "quantity\\s*precision\\s*(adjustment|change|update)"
+      - "collateral\\s*ratio\\s*(update|adjustment|change)"
+      - "position\\s*limit\\s*(update|adjustment|change)"
+      # 补充
+      # ====== 英文 tick size / precision / collateral ======
+      - "tick\\s*size"
+      - "tick\\s*size\\s*(update|adjustment|change)"
+      - "minimum\\s+price\\s+movement"
+      - "price\\s*step\\s*size"
+      - "quantity\\s*precision"
+      - "min\\s*(order|trade)\\s*(value|amount|notional)"
+      - "minimum\\s+order\\s+(value|amount|notional|size)"
+      - "collateral"
+      - "as\\s+collateral"
+      - "integrat(e|es|ed).*collateral"
+      # ====== 中文 借币/限额/准备金/最低值 ======
+      - "(下调|上调|调整).*(借币限额|限额)"
+      - "活期借币"
+      - "借币限额"
+      - "数量精度"
+      - "(最低价值|最低数量|最小下单|最小订单)"
+      - "风险准备金"
+      - "补偿金额"
+
+  # 4) 网络升级（链/主网/硬分叉）
+  - tag: "网络升级"
     case_sensitive: false
     patterns:
-      - "空投"
-      - "airdrop"
-      - "活动"
-      - "campaign"
-      - "promotion"
-      - "奖励"
-      - "reward"
-      - "giveaway"
-  
-  # 合约/杠杆
-  - tag: "合约杠杆"
+      # 中文
+      - "(网络|主网|链|公链).*(升级|硬分叉|维护|变更)"
+      - "硬分叉"
+      - "网络升级"
+      - "主网升级"
+      - "将支持.*(网络升级|硬分叉)"
+      # 英文
+      - "network\\s+upgrade"
+      - "mainnet\\s+upgrade"
+      - "hard\\s+fork"
+      - "support.*(network|mainnet|chain).*(upgrade|hard\\s*fork)"
+      - "(ethereum|polygon|thorchain|neutron|kadena|sei|solana|tron|bsc).*(upgrade|hard\\s*fork)"
+      # 补充
+      # ====== 英文 网络充提支持/停止 ======
+      - "support.*withdrawals?"
+      - "support.*deposits?"
+      - "withdrawals?\\s+from\\s+.*network"
+      - "deposits?\\s+via\\s+the\\s+.*network"
+      - "cease\\s+support\\s+for\\s+deposits?"
+      - "stop\\s+support\\s+for\\s+deposits?"
+      - "open(s)?\\s+.*deposit\\s+service"
+      - "chain\\s+.*deposit\\s+service"
+      # ====== 中文 提现/公链类型/链充值 ======
+      - "暂停.*(充提|充值|提币|提现)"
+      - "恢复.*(充提|充值|提币|提现)"
+      - "(开放|开启).*(链|网络).*充值"
+      - "公链类型"
+      - "充提公链"
+      - "(调整|变更).*(充提公链|公链类型|网络)"
+
+  # 5) 系统维护（交易所平台/引擎/系统）
+  - tag: "系统维护"
     case_sensitive: false
     patterns:
-      - "合约"
-      - "杠杆"
-      - "futures"
-      - "perpetual"
-      - "leverage"
-      - "margin"
-      - "swap"
-  
-  # 重要公告
-  - tag: "重要公告"
+      # 中文
+      - "系统(维护|升级|更新|停服|停机)"
+      - "交易(引擎|撮合|合约|现货).*升级"
+      - "维护(完成|结束|期间)"
+      - "暂停服务.*维护"
+      - "升级已完成"
+      - "恢复.*(交易|服务).*维护"
+      # 英文（排除 network/chain 升级）
+      - "system\\s+maintenance"
+      - "scheduled\\s+maintenance"
+      - "maintenance\\s+(complete|completed|notice|update)"
+      - "engine\\s+upgrade"
+      - "platform\\s+upgrade"
+      - "service\\s+upgrade"
+      - "temporary\\s+maintenance"
+      - "downtime\\s+for\\s+maintenance"
+      - "upgrade(?!.*(network|chain|mainnet|hard\\s*fork))"
+
+  # 6) 活动理财（活动/空投/比赛/理财/借贷/赚币）
+  - tag: "活动理财"
     case_sensitive: false
     patterns:
-      - "重要"
-      - "important"
-      - "urgent"
-      - "紧急"
-      - "安全"
-      - "security"
-      - "风险"
-      - "risk"
+      # 中文
+      - "(活动|福利|嘉年华|专区|挑战赛|竞赛|比赛)"
+      - "(空投|抽奖|盲盒|奖励|奖金池|瓜分|返利)"
+      - "(理财|赚币|余币宝|借贷|加息|利息|年化|APR|APY|staking|挖矿|积分系统)"
+      - "交易赢.*奖励"
+      - "报名即"
+      # 英文
+      - "(airdrop|campaign|promotion|event|contest|competition|giveaway|bonus|reward|lottery)"
+      - "(earn\\s+up\\s+to|apr|apy|staking|savings|loan|mining|yield\\s+arena)"
+      - "trade\\s+to\\s+earn"
+      - "win\\s+\\$?[0-9,]+"
+      # 补充
+      - "合约商城"
+      - "第二期"
+      - "领.*(奖励|福利|奖品|苹果)"
+      - "巅峰赛"
+      - "大赛|竞赛|赛季|赛事"
+      # ====== Gate Alpha 类活动 ======
+      - "积分夺宝"
+      - "限时领取"
+      - "第\\s*\\d+\\s*期"
+      - "Launchpad"
+      - "退款"
+      - "refund"
+      # ====== 产品/推广口径（你要把它们归活动类的话） ======
+      - "introducing"
+      - "one-?click\\s+buy"
+      - "buy\\s+crypto"
 
 
 # ------------------------------------------------------------
@@ -100,12 +223,12 @@ tag_rules:
 filter:
   # 允许推送的标签列表
   allowed_tags:
-    - "新币上线"
     - "下架退市"
-    # - "维护升级"
-    # - "空投活动"
-    # - "合约杠杆"
-    - "重要公告"
+    - "网络升级"
+    - "系统维护"
+    - "参数调整"
+    # - "新币上线"
+    # - "活动理财"
   
   # 是否允许推送无标签的公告
   allow_no_tag: false
