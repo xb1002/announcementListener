@@ -16,30 +16,30 @@ from core.model import RawAnnouncement, Announcement
 class RegexTitleTagger(TitleTagger):
     """基于正则表达式的标题标签器"""
     
-    def __init__(self, rules_file: str = "tagger_rules.yaml"):
+    def __init__(self, config_file: str = "config.yaml"):
         """
         初始化标签器
         
         Args:
-            rules_file: 规则配置文件路径（相对于当前工作目录）
+            config_file: 配置文件路径（相对于当前工作目录）
         """
-        self.rules_file = Path(rules_file)
+        self.config_file = Path(config_file)
         self.rules: List[Dict] = []
         self._load_rules()
     
     def _load_rules(self) -> None:
         """从 YAML 文件加载规则"""
-        if not self.rules_file.exists():
-            print(f"[警告] 规则文件不存在: {self.rules_file}，将使用空规则")
+        if not self.config_file.exists():
+            print(f"[警告] 配置文件不存在: {self.config_file}，将使用空规则")
             return
         
         try:
-            with open(self.rules_file, 'r', encoding='utf-8') as f:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
-                self.rules = config.get('rules', [])
+                self.rules = config.get('tag_rules', [])
                 print(f"[加载] 已加载 {len(self.rules)} 条标签规则")
         except Exception as e:
-            print(f"[错误] 加载规则文件失败: {e}")
+            print(f"[错误] 加载配置文件失败: {e}")
             self.rules = []
     
     def tag(self, raw: RawAnnouncement) -> Announcement:

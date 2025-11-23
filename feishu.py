@@ -4,6 +4,7 @@
 负责将公告推送到飞书机器人，并维护已推送公告的历史记录以防止重复推送。
 """
 
+import time
 import os
 import requests
 from typing import Set, Optional
@@ -44,13 +45,15 @@ class FeishuNotifier(Notifier):
         # 已推送公告的 hash 集合
         self.sent_hashes: Set[str] = self._load_history()
     
-    def notify(self, ann: Announcement) -> None:
+    def notify(self, ann: Announcement, delay: float = 0) -> None:
         """
         发送公告通知到飞书
         
         Args:
             ann: 要推送的公告
+            delay: 推送后等待的秒数（避免发送过快）
         """
+        
         # 检查是否已经推送过
         if ann.hash in self.sent_hashes:
             print(f"[跳过] 公告已推送过: {ann.title[:30]}...")
@@ -78,6 +81,10 @@ class FeishuNotifier(Notifier):
             self._save_history(ann.hash)
             
             print(f"[成功] 已推送: [{ann.exchange}] {ann.title[:30]}...")
+            
+            # 等待指定时间
+            if delay > 0:
+                time.sleep(delay)
             
         except requests.RequestException as e:
             print(f"[失败] 推送失败: {e}")
