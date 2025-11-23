@@ -1,0 +1,86 @@
+# 标题标签规则配置
+# 
+# 规则按顺序匹配，第一个匹配成功的规则将被应用
+# 如果所有规则都不匹配，tag 将为 None
+#
+# 每条规则包含：
+#   - tag: 要打的标签名称
+#   - patterns: 正则表达式列表（满足任意一个即可）
+#   - case_sensitive: 是否区分大小写（可选，默认 false）
+
+rules:
+  # 下架/退市（优先级更高，避免被 listing 误匹配）
+  - tag: "下架退市"
+    case_sensitive: false
+    patterns:
+      - "下架"
+      - "退市"
+      - "delisting"
+      - "delist"
+      - "removal.*trading"
+      - "suspend.*trading"
+      - "停止.*交易"
+  
+  # 新币上线
+  - tag: "新币上线"
+    case_sensitive: false
+    patterns:
+      - "上线.*交易对"
+      - "will list"
+      - "(?<!de)listing"  # 排除 delisting
+      - "new.*listing"
+      - "新币"
+      - "上市"
+      - "launch.*trading"
+      - "opens.*trading"
+  
+  # 维护升级
+  - tag: "维护升级"
+    case_sensitive: false
+    patterns:
+      - "维护"
+      - "升级"
+      - "maintenance"
+      - "upgrade"
+      - "system.*update"
+      - "暂停.*充提"
+      - "suspend.*deposit"
+      - "suspend.*withdrawal"
+  
+  # 空投/活动
+  - tag: "空投活动"
+    case_sensitive: false
+    patterns:
+      - "空投"
+      - "airdrop"
+      - "活动"
+      - "campaign"
+      - "promotion"
+      - "奖励"
+      - "reward"
+      - "giveaway"
+  
+  # 合约/杠杆
+  - tag: "合约杠杆"
+    case_sensitive: false
+    patterns:
+      - "合约"
+      - "杠杆"
+      - "futures"
+      - "perpetual"
+      - "leverage"
+      - "margin"
+      - "swap"
+  
+  # 重要公告
+  - tag: "重要公告"
+    case_sensitive: false
+    patterns:
+      - "重要"
+      - "important"
+      - "urgent"
+      - "紧急"
+      - "安全"
+      - "security"
+      - "风险"
+      - "risk"
