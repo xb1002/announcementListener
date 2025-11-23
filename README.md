@@ -105,16 +105,23 @@ announcementListener/
 │   ├── interface.py       # AnnouncementSource, TitleTagger, Notifier
 │   └── model.py          # RawAnnouncement, Announcement
 │
-├── exchange/             # 交易所实现
-│   ├── gate.py          # Gate 交易所
-│   ├── mexc.py          # MEXC 交易所
-│   └── huobi.py         # Huobi (HTX) 交易所
+├── exchange/             # 交易所实现（8个）
+│   ├── binance.py        # Binance (币安)
+│   ├── okx.py           # OKX (欧易)
+│   ├── gate.py          # Gate
+│   ├── mexc.py          # MEXC
+│   ├── huobi.py         # Huobi (HTX)
+│   ├── bybit.py         # Bybit
+│   ├── bitget.py        # Bitget
+│   └── coinex.py        # CoinEx
 │
-├── main.py              # 主程序入口
+├── main.py              # 主程序入口（持续监听）
+├── quickstart.py        # 快速测试脚本（单次运行）
+├── test_tagger.py       # 标签规则测试工具
+├── fetch_all_raw.py     # 原始公告获取工具
 ├── tagger.py            # 标签器实现
 ├── feishu.py            # 飞书通知器
-├── config.yaml          # 配置文件
-└── quickstart.py        # 快速测试脚本
+└── config.yaml          # 统一配置文件
 ```
 
 ## 配置说明
@@ -204,6 +211,30 @@ python quickstart.py
 ```
 
 适合测试配置是否正确，不会进入循环。
+
+### 工具脚本
+
+项目提供了额外的工具脚本：
+
+**1. 测试标签规则 (`test_tagger.py`)**
+
+测试配置文件中的标签匹配规则是否正确：
+
+```bash
+# 默认获取每个交易所10条公告进行测试
+python test_tagger.py
+
+# 获取更多公告测试
+python test_tagger.py -l 20
+
+# 使用自定义配置文件
+python test_tagger.py -c my_config.yaml
+```
+
+输出内容：
+- 标签统计（每个标签匹配到多少条）
+- 按标签分组的详细列表
+- 每条公告的交易所、标题和匹配的标签
 
 ### 自定义使用
 
@@ -428,20 +459,67 @@ A: 检查：
 A: 历史记录保存在 `feishu_sent_history.txt`：
 
 ```bash
-# 查看记录数量
+# Windows查看记录数量
+Get-Content feishu_sent_history.txt | Measure-Object -Line
+
+# Linux/Mac查看记录数量
 wc -l feishu_sent_history.txt
 
 # 清空历史（谨慎使用！）
 rm feishu_sent_history.txt
 ```
 
+### Q: 如何测试标签规则是否正确？
+
+A: 使用标签测试工具：
+
+```bash
+python test_tagger.py -l 10
+```
+
+这会获取公告并显示每条公告匹配的标签，帮助你调整 `config.yaml` 中的规则。
+
+
+## 项目文件说明
+
+### 主程序
+- `main.py` - 主程序，持续监听并推送公告
+- `quickstart.py` - 快速测试脚本，执行一次完整流程
+
+### 工具脚本
+- `test_tagger.py` - 测试标签匹配规则
+
+### 核心模块
+- `core/interface.py` - 定义核心接口
+- `core/model.py` - 数据模型定义
+- `tagger.py` - 标签器实现
+- `feishu.py` - 飞书通知器实现
+
+### 交易所适配器
+- `exchange/binance.py` - Binance (币安)
+- `exchange/okx.py` - OKX (欧易)
+- `exchange/gate.py` - Gate
+- `exchange/mexc.py` - MEXC
+- `exchange/huobi.py` - Huobi (HTX)
+- `exchange/bybit.py` - Bybit
+- `exchange/bitget.py` - Bitget
+- `exchange/coinex.py` - CoinEx
+
+### 配置文件
+- `config.yaml` - 统一配置（标签规则、过滤、运行参数）
+- `.env` - 环境变量（飞书Webhook URL）
+- `requirements.txt` - Python依赖包
+
+### 数据文件
+- `feishu_sent_history.txt` - 已推送公告的哈希记录
+
 ## 运行要求
 
 - Python 3.7+
 - 依赖包：
-  - requests
-  - python-dotenv
-  - pyyaml
+  - requests >= 2.31.0
+  - python-dotenv >= 1.0.0
+  - pyyaml >= 6.0.1
 
 ## 支持的交易所
 
