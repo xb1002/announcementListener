@@ -2,9 +2,9 @@
 Binance 交易所公告监听实现
 
 支持的公告类型:
-- 新币上线 (catalogId: 49) https://www.binance.com/zh-CN/support/announcement/list/49
-- 新交易对上线 (catalogId: 161) https://www.binance.com/zh-CN/support/announcement/list/161  
-- U本位合约上线 (catalogId: 157) https://www.binance.com/zh-CN/support/announcement/list/157
+- 币安最新动态 (catalogId: 49) https://www.binance.com/zh-CN/support/announcement/list/49
+- 下架讯息 (catalogId: 161) https://www.binance.com/zh-CN/support/announcement/list/161  
+- 钱包维护动态 (catalogId: 157) https://www.binance.com/zh-CN/support/announcement/list/157
 
 如果需要监听其他类型公告，请参考 Binance 公告页面获取对应的 catalogId
 并且添加到 CATALOG_IDS 字典中。
@@ -28,9 +28,9 @@ class BinanceAnnouncementSource(AnnouncementSource):
     
     # 公告分类ID
     CATALOG_IDS = {
-        "new_listing": 49,      # 新币上线
-        "new_trading_pair": 161, # 新交易对上线
-        "new_futures": 157       # U本位合约上线
+        "binance_latest": 49,      # 币安最新动态
+        "delisting_info": 161,     # 下架讯息
+        "wallet_maintenance": 157   # 钱包维护动态
     }
     
     def __init__(self, catalog_ids: List[int] = None, timeout: int = 10):
