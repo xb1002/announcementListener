@@ -78,11 +78,8 @@ class BitgetAnnouncementSource(AnnouncementSource):
             timeout: API请求超时时间（秒）
         """
         if section_ids is None:
-            # 默认监听退市公告和最新公告
-            self.section_ids = [
-                # self.SECTION_IDS["delistings"],
-                self.SECTION_IDS["latest"]
-            ]
+            # 默认监听所有类型
+            self.section_ids = list(self.SECTION_IDS.values())
         else:
             self.section_ids = section_ids
         

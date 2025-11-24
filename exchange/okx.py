@@ -50,10 +50,8 @@ class OKXAnnouncementSource(AnnouncementSource):
             timeout: API请求超时时间（秒）
         """
         if section_paths is None:
-            # 默认监听最新公告
-            self.section_paths = [
-                self.SECTION_PATHS["latest"],
-            ]
+            # 默认监听所有类型
+            self.section_paths = list(self.SECTION_PATHS.values())
         else:
             self.section_paths = section_paths
         

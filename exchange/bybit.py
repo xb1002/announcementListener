@@ -30,7 +30,7 @@ class BybitAnnouncementSource(AnnouncementSource):
     CATEGORIES = {
         "delistings": "delistings",              # 退市公告
         "maintenance": "maintenance_updates",    # 维护更新
-        # "all": None,                           # 所有公告
+        # "all": "",                                # 所有公告
     }
     
     # __NEXT_DATA__ script 标签匹配模式
@@ -74,11 +74,8 @@ class BybitAnnouncementSource(AnnouncementSource):
             timeout: API请求超时时间（秒）
         """
         if categories is None:
-            # 默认监听退市公告和维护更新
-            self.categories = [
-                self.CATEGORIES["delistings"],
-                self.CATEGORIES["maintenance"]
-            ]
+            # 默认监听所有类型
+            self.categories = list(self.CATEGORIES.values())
         else:
             self.categories = categories
         

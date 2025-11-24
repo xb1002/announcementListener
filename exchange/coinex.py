@@ -78,11 +78,8 @@ class CoinExAnnouncementSource(AnnouncementSource):
             timeout: API请求超时时间（秒）
         """
         if category_ids is None:
-            # 默认监听退市公告和最新公告
-            self.category_ids = [
-                # self.CATEGORY_IDS["delistings"],
-                self.CATEGORY_IDS["latest"]
-            ]
+            # 默认监听所有类型
+            self.category_ids = list(self.CATEGORY_IDS.values())
         else:
             self.category_ids = category_ids
         
