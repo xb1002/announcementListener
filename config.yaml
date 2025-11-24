@@ -257,7 +257,7 @@ monitor:
   interval_random: 50
   
   # 每个交易所获取的公告数量
-  fetch_limit: 10
+  fetch_limit: 20
   
   # 推送到飞书后的等待时间（秒）
   # 避免发送过快导致被拒绝
