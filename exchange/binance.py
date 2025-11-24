@@ -11,6 +11,7 @@ Binance 交易所公告监听实现
 
 """
 
+import time
 import requests
 from typing import Sequence, List
 from datetime import datetime
@@ -71,6 +72,7 @@ class BinanceAnnouncementSource(AnnouncementSource):
             try:
                 announcements = self._fetch_by_catalog(catalog_id, limit)
                 all_announcements.extend(announcements)
+                time.sleep(0.2)  # 避免请求过快
             except Exception as e:
                 print(f"获取 Binance 公告失败 (catalogId={catalog_id}): {e}")
                 continue
@@ -91,11 +93,54 @@ class BinanceAnnouncementSource(AnnouncementSource):
         Returns:
             RawAnnouncement 列表
         """
-        # 使用 GET 请求，参数作为查询参数
+        all_articles = []
+        max_page_size = 20  # Binance API 单次请求最大支持 20 条
+        
+        # 计算需要请求的次数
+        num_pages = (limit + max_page_size - 1) // max_page_size
+        
+        for page_no in range(1, num_pages + 1):
+            # 计算当前页应该请求的数量
+            remaining = limit - len(all_articles)
+            current_page_size = min(remaining, max_page_size)
+            
+            if current_page_size <= 0:
+                break
+            
+            try:
+                articles = self._fetch_page(catalog_id, page_no, current_page_size)
+                all_articles.extend(articles)
+                
+                # 如果返回的数量少于请求的数量，说明没有更多数据了
+                if len(articles) < current_page_size:
+                    break
+                    
+            except Exception as e:
+                # 如果不是第一页失败，返回已获取的数据
+                if page_no > 1:
+                    print(f"获取第 {page_no} 页失败: {e}，返回已获取的 {len(all_articles)} 条数据")
+                    break
+                else:
+                    raise
+        
+        return self._parse_articles(all_articles[:limit])
+    
+    def _fetch_page(self, catalog_id: int, page_no: int, page_size: int) -> List[dict]:
+        """
+        获取指定页的公告数据
+        
+        Args:
+            catalog_id: 公告分类ID
+            page_no: 页码（从1开始）
+            page_size: 每页数量（最大20）
+            
+        Returns:
+            文章列表
+        """
         params = {
             "type": 1,
-            "pageNo": 1,
-            "pageSize": limit,
+            "pageNo": page_no,
+            "pageSize": min(page_size, 20),  # 确保不超过20
         }
         
         try:
@@ -125,9 +170,7 @@ class BinanceAnnouncementSource(AnnouncementSource):
             if target_catalog is None:
                 raise Exception(f"未找到 catalogId={catalog_id} 的数据")
             
-            articles = target_catalog.get("articles", [])
-            
-            return self._parse_articles(articles)
+            return target_catalog.get("articles", [])
             
         except requests.RequestException as e:
             raise Exception(f"API请求失败: {e}")
