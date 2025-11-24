@@ -30,7 +30,7 @@ class BybitAnnouncementSource(AnnouncementSource):
     CATEGORIES = {
         "delistings": "delistings",              # 退市公告
         "maintenance": "maintenance_updates",    # 维护更新
-        # "new_crypto": "new_crypto",              # 新币上线
+        # "all": None,                           # 所有公告
     }
     
     # __NEXT_DATA__ script 标签匹配模式
@@ -115,6 +115,8 @@ class BybitAnnouncementSource(AnnouncementSource):
     
     def _build_listing_url(self, category: str) -> str:
         """构建分类列表 URL"""
+        if category is None:
+            category = ""
         return f"{self.BASE_URL}/{self.lang}/?category={category}"
     
     def _build_article_url(self, path: str, category: str) -> str:
