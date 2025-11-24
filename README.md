@@ -260,6 +260,17 @@ for ann in announcements:
 
 ## 如何扩展
 
+### 扩展现有交易所的监听范围
+
+如果你想为已支持的交易所添加更多公告类型（如新币上线、活动公告等），请参考：
+
+📖 **[扩展交易所监听范围教程](docs/extend_exchange_monitoring.md)**
+
+该文档详细说明了：
+- 如何获取各交易所的分类参数（catalogId / category / section path 等）
+- 如何修改配置字典
+- 包含所有 8 个交易所的详细步骤和截图参考
+
 ### 添加新的交易所
 
 1. 在 `exchange/` 目录创建新文件，例如 `binance.py`
