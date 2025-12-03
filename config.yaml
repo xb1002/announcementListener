@@ -81,7 +81,7 @@ tag_rules:
       - "代币置换"
       - "token\\s*swap"
       # 英文
-      - "
+      - "rename(d)?"
       - "token\\s+swap"
       - "contract\\s+swap"
       - "migration"
