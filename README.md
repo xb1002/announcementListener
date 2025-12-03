@@ -24,7 +24,11 @@ pip install -r requirements.txt
 创建 `.env` 文件：
 
 ```bash
+# 主频道 - 推送符合过滤规则的公告（必填）
 FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token
+
+# 次要频道 - 推送被主频道过滤掉的公告（可选）
+FEISHU_SECONDARY_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-secondary-token
 ```
 
 ### 3. 配置监听规则

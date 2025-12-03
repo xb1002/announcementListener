@@ -50,14 +50,20 @@ def main():
     print("测试完成")
     print("=" * 80)
     final_stats = monitor.notifier.get_stats()
+    secondary_stats = monitor.secondary_notifier.get_stats()
     print(f"\n📊 统计信息:")
-    print(f"  - 历史推送总计: {final_stats['total_sent']} 条")
+    print(f"  - 主频道推送总计: {final_stats['total_sent']} 条")
+    if secondary_stats.get('enabled'):
+        print(f"  - 次要频道推送总计: {secondary_stats['total_sent']} 条")
+    else:
+        print(f"  - 次要频道: 未配置")
     print(f"  - 标签规则数: {len(monitor.tagger.rules)} 条")
     print(f"  - 允许的标签: {monitor.filter.allowed_tags or '全部'}")
     print()
     print("💡 提示:")
     print("  - 如需正式运行，执行: python main.py")
     print("  - 修改配置: 编辑 config.yaml")
+    print("  - 次要频道配置: 在 .env 中设置 FEISHU_SECONDARY_WEBHOOK_URL")
     print()
 
 

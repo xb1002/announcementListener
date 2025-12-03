@@ -17,7 +17,7 @@ from typing import List, Set, Optional
 from datetime import datetime
 
 from tagger import RegexTitleTagger
-from feishu import FeishuNotifier
+from feishu import FeishuNotifier, FeishuSecondaryNotifier
 from core.model import RawAnnouncement, Announcement
 
 # 导入交易所
@@ -108,6 +108,7 @@ class AnnouncementMonitor:
         self.tagger = RegexTitleTagger(config_file)
         self.filter = AnnouncementFilter(config_file)
         self.notifier = FeishuNotifier()
+        self.secondary_notifier = FeishuSecondaryNotifier()  # 次要频道（可选）
         
         # 配置交易所列表
         self.sources = [
@@ -198,15 +199,23 @@ class AnnouncementMonitor:
         filtered_count = 0
         skipped_count = 0
         failed_count = 0
+        secondary_notified_count = 0  # 次要频道推送计数
         
         for raw in raw_announcements:
             try:
                 # 打标签
                 announcement = self.tagger.tag(raw)
                 
-                # 检查是否应该推送
+                # 检查是否应该推送到主频道
                 if not self.filter.should_notify(announcement):
                     filtered_count += 1
+                    # 将被过滤的公告发送到次要频道（如果已配置）
+                    try:
+                        self.secondary_notifier.notify(announcement, delay=self.notify_delay)
+                        if self.secondary_notifier.enabled:
+                            secondary_notified_count += 1
+                    except Exception as e:
+                        pass  # 次要频道失败不影响主流程
                     continue
                 
                 # 尝试推送
@@ -231,8 +240,9 @@ class AnnouncementMonitor:
                 failed_count += 1
         
         # 输出统计
+        secondary_info = f" | 次要频道: {secondary_notified_count}" if self.secondary_notifier.enabled else ""
         print(f"\n[统计] 总计: {total_count} | 推送: {notified_count} | "
-              f"过滤: {filtered_count} | 跳过: {skipped_count} | 失败: {failed_count}")
+              f"过滤: {filtered_count}{secondary_info} | 跳过: {skipped_count} | 失败: {failed_count}")
     
     def initial_load(self) -> None:
         """首次运行：加载现有公告并初始化历史"""
@@ -255,6 +265,7 @@ class AnnouncementMonitor:
         
         # 初始化历史（标记为已推送，避免首次运行时大量推送）
         self.notifier.initial_hashes(announcements)
+        self.secondary_notifier.initial_hashes(announcements)  # 次要频道也初始化
     
     def run_once(self) -> None:
         """执行一次监听循环"""
@@ -272,7 +283,10 @@ class AnnouncementMonitor:
         
         # 显示统计
         stats = self.notifier.get_stats()
-        print(f"[历史] 已推送总计: {stats['total_sent']} 条")
+        secondary_stats = self.secondary_notifier.get_stats()
+        print(f"[历史] 主频道已推送: {stats['total_sent']} 条")
+        if secondary_stats.get('enabled'):
+            print(f"[历史] 次要频道已推送: {secondary_stats['total_sent']} 条")
         print()
     
     def run(self) -> None:

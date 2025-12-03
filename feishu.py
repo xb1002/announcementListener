@@ -1,7 +1,9 @@
-"""
-飞书通知器实现
+"""飞书通知器实现
 
 负责将公告推送到飞书机器人，并维护已推送公告的历史记录以防止重复推送。
+支持主频道和次要频道：
+- 主频道：推送符合过滤规则的公告
+- 次要频道（可选）：推送被主频道过滤掉的公告
 """
 
 import time
@@ -210,6 +212,89 @@ class FeishuNotifier(Notifier):
             "total_sent": len(self.sent_hashes),
             "history_file": str(self.history_file),
             "file_exists": self.history_file.exists()
+        }
+
+
+class FeishuSecondaryNotifier(FeishuNotifier):
+    """飞书次要频道通知器
+    
+    用于推送被主频道过滤掉的公告到次要频道。
+    如果未配置次要频道 webhook，则不进行任何操作。
+    """
+    
+    def __init__(
+        self, 
+        webhook_url: Optional[str] = None,
+        history_file: str = "feishu_secondary_sent_history.txt",
+        timeout: int = 10
+    ):
+        """
+        初始化次要频道通知器
+        
+        Args:
+            webhook_url: 飞书机器人 Webhook URL，如果为 None 则从环境变量 FEISHU_SECONDARY_WEBHOOK_URL 读取
+            history_file: 历史记录文件路径
+            timeout: 请求超时时间（秒）
+        """
+        # 从环境变量或参数获取 webhook_url
+        self.webhook_url = webhook_url or os.getenv("FEISHU_SECONDARY_WEBHOOK_URL")
+        
+        # 次要频道是可选的，如果没有配置则设置为不可用状态
+        self.enabled = bool(self.webhook_url)
+        
+        if not self.enabled:
+            print("[次要频道] 未配置次要频道 webhook，次要频道功能已禁用")
+            self.sent_hashes: Set[str] = set()
+            self.history_file = Path(history_file)
+            self.timeout = timeout
+            return
+        
+        # 调用父类初始化（但跳过 webhook_url 验证）
+        self.history_file = Path(history_file)
+        self.timeout = timeout
+        self.sent_hashes: Set[str] = self._load_history()
+        
+        print(f"[次要频道] 已启用次要频道通知")
+    
+    def notify(self, ann: Announcement, delay: float = 0) -> None:
+        """
+        发送公告通知到次要飞书频道
+        
+        如果次要频道未启用，则静默跳过。
+        
+        Args:
+            ann: 要推送的公告
+            delay: 推送后等待的秒数
+        """
+        if not self.enabled:
+            return
+        
+        # 调用父类的 notify 方法
+        super().notify(ann, delay)
+    
+    def initial_hashes(self, announcements: list[Announcement]) -> None:
+        """
+        初始化历史记录
+        
+        如果次要频道未启用，则静默跳过。
+        """
+        if not self.enabled:
+            return
+        
+        super().initial_hashes(announcements)
+    
+    def get_stats(self) -> dict:
+        """
+        获取统计信息
+        
+        Returns:
+            统计信息字典
+        """
+        return {
+            "enabled": self.enabled,
+            "total_sent": len(self.sent_hashes),
+            "history_file": str(self.history_file),
+            "file_exists": self.history_file.exists() if self.enabled else False
         }
 
 
