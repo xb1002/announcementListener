@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .env
 feishu_sent_history.txt
+feishu_secondary_sent_history.txt
