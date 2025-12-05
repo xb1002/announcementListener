@@ -80,6 +80,7 @@ tag_rules:
       - "合约置换"
       - "代币置换"
       - "token\\s*swap"
+      - "置换"
       # 英文
       - "rename(d)?"
       - "token\\s+swap"
