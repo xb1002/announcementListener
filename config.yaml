@@ -150,6 +150,7 @@ tag_rules:
       - "最低价值和数量调整"
       # ====== 新增：Bybit 标题口径“调整公告——有关……” ======
       - "调整公告.*(数量精度|价格精度|最低价值|最低数量|最小订单)"
+      - "调整"
 
   # 5) 充提服务（充值/提现/钱包开关/网络充提支持或停止）
   - tag: "充提服务"
@@ -167,6 +168,7 @@ tag_rules:
       - "提币地址变更"
       - "充提公链类型.*(调整|变更|更新)"
       - "公链类型.*(调整|变更|更新)"
+      - "冲提"
       # 英文：充提/钱包支持变更（含停止某网络充值、支持某网络提现等）
       - "wallet\\s+maintenance"
       - "wallet\\s+to\\s+discontinue\\s+support"
@@ -184,6 +186,11 @@ tag_rules:
       - "cease\\s+support\\s+for\\s+withdrawals?"
       - "discontinu(e|ing)\\s+support\\s+for\\s+deposits?"
       - "discontinu(e|ing)\\s+support\\s+for\\s+withdrawals?"
+
+  - tag: "通用重要"
+    case_sensitive: false
+    patterns:
+      - "暂停"
 
   # 4) 新币上线（现货/合约/杠杆资产新增 都算；含“延迟上线/推迟发布”）
   - tag: "新币上线"
@@ -323,6 +330,7 @@ filter:
     - "资产置换"
     - "参数调整"
     - "充提服务"
+    - "通用重要"
     # - "新币上线"
     # - "网络升级"
     # - "产品功能更新"
