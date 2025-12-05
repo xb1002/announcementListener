@@ -187,11 +187,6 @@ tag_rules:
       - "discontinu(e|ing)\\s+support\\s+for\\s+deposits?"
       - "discontinu(e|ing)\\s+support\\s+for\\s+withdrawals?"
 
-  - tag: "通用重要"
-    case_sensitive: false
-    patterns:
-      - "暂停"
-
   # 4) 新币上线（现货/合约/杠杆资产新增 都算；含“延迟上线/推迟发布”）
   - tag: "新币上线"
     case_sensitive: false
@@ -313,6 +308,11 @@ tag_rules:
       - "grid\\s+trading\\s+campaign"
       - "(借贷|借币).*(福利|返利|加息|优惠|活动|专区|比赛|限时|0息|免息)"
       - "(0息|免息).*借贷"
+
+  - tag: "通用重要"
+    case_sensitive: false
+    patterns:
+      - "暂停"
 
 
 # ------------------------------------------------------------
