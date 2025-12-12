@@ -44,6 +44,7 @@ class AnnouncementFilter:
         self.config_file = Path(config_file)
         self.allowed_tags: Set[str] = set()
         self.allow_no_tag: bool = False
+        self.max_days_ago: int = 3  # 默认过滤 3 天前的公告
         self._load_config()
     
     def _load_config(self) -> None:
@@ -58,9 +59,11 @@ class AnnouncementFilter:
                 filter_config = config.get('filter', {})
                 self.allowed_tags = set(filter_config.get('allowed_tags', []))
                 self.allow_no_tag = filter_config.get('allow_no_tag', False)
+                self.max_days_ago = filter_config.get('max_days_ago', 3)
                 
                 print(f"[过滤器] 允许的标签: {self.allowed_tags or '全部'}")
                 print(f"[过滤器] 允许无标签: {self.allow_no_tag}")
+                print(f"[过滤器] 时间范围: 最近 {self.max_days_ago} 天")
         except Exception as e:
             print(f"[错误] 加载过滤配置失败: {e}")
     
@@ -74,6 +77,12 @@ class AnnouncementFilter:
         Returns:
             True 表示应该推送，False 表示过滤掉
         """
+        # 时间过滤：检查公告是否在时间范围内
+        now = datetime.now(ann.announcement_time.tzinfo or None)
+        time_diff = now - ann.announcement_time
+        if time_diff.days > self.max_days_ago:
+            return False
+        
         # 如果没有配置允许的标签，推送所有
         if not self.allowed_tags:
             return True

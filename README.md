@@ -162,10 +162,12 @@ filter:
     - "重要公告"
   
   allow_no_tag: false
+  max_days_ago: 3
 ```
 
 - `allowed_tags`: 只推送这些标签的公告
 - `allow_no_tag`: 是否推送没有匹配到标签的公告
+- `max_days_ago`: 时间过滤，只推送最近 N 天内的公告（默认 3 天）
 
 ### 3. 运行参数 (monitor)
 
