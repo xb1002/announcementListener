@@ -67,6 +67,20 @@ class AnnouncementFilter:
         except Exception as e:
             print(f"[错误] 加载过滤配置失败: {e}")
     
+    def is_within_time_range(self, ann: Announcement) -> bool:
+        """
+        判断公告是否在时间范围内
+        
+        Args:
+            ann: 公告对象
+            
+        Returns:
+            True 表示在时间范围内，False 表示过期
+        """
+        now = datetime.now(ann.announcement_time.tzinfo or None)
+        time_diff = now - ann.announcement_time
+        return time_diff.days <= self.max_days_ago
+
     def should_notify(self, ann: Announcement) -> bool:
         """
         判断公告是否应该推送
@@ -78,9 +92,7 @@ class AnnouncementFilter:
             True 表示应该推送，False 表示过滤掉
         """
         # 时间过滤：检查公告是否在时间范围内
-        now = datetime.now(ann.announcement_time.tzinfo or None)
-        time_diff = now - ann.announcement_time
-        if time_diff.days > self.max_days_ago:
+        if not self.is_within_time_range(ann):
             return False
         
         # 如果没有配置允许的标签，推送所有
@@ -215,10 +227,16 @@ class AnnouncementMonitor:
                 # 打标签
                 announcement = self.tagger.tag(raw)
                 
-                # 检查是否应该推送到主频道
+                # 首先检查时间范围，超时的公告直接跳过，不发送到任何频道
+                if not self.filter.is_within_time_range(announcement):
+                    filtered_count += 1
+                    continue
+                
+                # 检查是否应该推送到主频道（此时只检查标签规则）
                 if not self.filter.should_notify(announcement):
                     filtered_count += 1
-                    # 将被过滤的公告发送到次要频道（如果已配置）
+                    # 将被标签过滤的公告发送到次要频道（如果已配置）
+                    # 注意：此时公告已经通过了时间检查，所以不会发送过期消息
                     try:
                         self.secondary_notifier.notify(announcement, delay=self.notify_delay)
                         if self.secondary_notifier.enabled:
