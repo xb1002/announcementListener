@@ -18,7 +18,9 @@ class Announcement:
 
     @property
     def hash(self) -> str:
-        unique_string = f"{self.exchange}-{self.title}-{self.announcement_time.isoformat()}-{self.url}"
+        # unique_string = f"{self.exchange}-{self.title}-{self.announcement_time.isoformat()}-{self.url}"
+        # 由于监听不同的category可能会抓取到相同标题和时间的公告，因此去掉url以避免重复
+        unique_string = f"{self.exchange}-{self.title}-{self.announcement_time.isoformat()}"
         return hashlib.sha256(unique_string.encode('utf-8')).hexdigest()
 
 @dataclass(frozen=True)
