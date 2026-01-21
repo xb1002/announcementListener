@@ -168,7 +168,8 @@ class OKXAnnouncementSource(AnnouncementSource):
             .get("sectionData", {})
         )
         article_list = section_data.get("articleList", {})
-        return article_list.get("items", [])
+        # OKX 数据结构使用 "list" 而不是 "items"
+        return article_list.get("list", [])
     
     def _parse_items(self, items: List[dict]) -> List[RawAnnouncement]:
         """
@@ -184,12 +185,12 @@ class OKXAnnouncementSource(AnnouncementSource):
         
         for item in items:
             try:
-                # 解析发布时间 (ISO 8601 格式)
-                publish_time_str = item.get("publishTime")
-                if not publish_time_str:
+                # 解析发布时间 (毫秒时间戳或 ISO 8601 格式)
+                publish_time = item.get("publishTime")
+                if not publish_time:
                     continue
                 
-                announcement_time = self._parse_iso8601(publish_time_str)
+                announcement_time = self._parse_publish_time(publish_time)
                 if announcement_time is None:
                     continue
                 
@@ -214,17 +215,36 @@ class OKXAnnouncementSource(AnnouncementSource):
         return announcements
     
     @staticmethod
-    def _parse_iso8601(value: str) -> Optional[datetime]:
-        """解析 ISO 8601 格式的时间字符串"""
-        if not value:
+    def _parse_publish_time(value) -> Optional[datetime]:
+        """解析发布时间（支持毫秒时间戳或 ISO 8601 格式）"""
+        if value is None:
             return None
-        try:
-            # 处理 Z 结尾的 UTC 时间
-            if value.endswith("Z"):
-                value = value[:-1] + "+00:00"
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
+        
+        # 如果是数字（毫秒时间戳）
+        if isinstance(value, (int, float)):
+            try:
+                return datetime.fromtimestamp(value / 1000)
+            except (ValueError, OSError):
+                return None
+        
+        # 如果是字符串
+        if isinstance(value, str):
+            # 尝试解析为数字时间戳
+            if value.isdigit():
+                try:
+                    return datetime.fromtimestamp(int(value) / 1000)
+                except (ValueError, OSError):
+                    pass
+            
+            # 尝试 ISO 8601 格式
+            try:
+                if value.endswith("Z"):
+                    value = value[:-1] + "+00:00"
+                return datetime.fromisoformat(value)
+            except ValueError:
+                pass
+        
+        return None
     
     def __del__(self):
         """关闭会话"""
