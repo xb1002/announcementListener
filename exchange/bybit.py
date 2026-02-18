@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 from core.interface import AnnouncementSource
 from core.model import RawAnnouncement
 
+try:
+    # Optional: use curl_cffi for better TLS/HTTP2 fingerprinting (matches test.py)
+    from curl_cffi import requests as crequests  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    crequests = None
+
 
 class BybitAnnouncementSource(AnnouncementSource):
     """Bybit 交易所公告数据源"""
@@ -25,6 +31,9 @@ class BybitAnnouncementSource(AnnouncementSource):
     
     # Bybit 公告基础URL
     BASE_URL = "https://announcements.bybit.com"
+
+    # Bybit 搜索 API
+    SEARCH_API_BASE = "https://announcements.bybit.com/x-api/announcements/api/search/v1/index"
     
     # 公告分类
     CATEGORIES = {
@@ -88,6 +97,11 @@ class BybitAnnouncementSource(AnnouncementSource):
             'Accept-Language': self._get_accept_language(),
             'Cache-Control': 'no-cache',
         })
+
+        # Prefer curl_cffi session if available (more reliable for Bybit)
+        self.csession = None
+        if crequests is not None:
+            self.csession = crequests.Session(impersonate="chrome")
     
     @classmethod
     def _normalize_lang(cls, lang: str) -> str:
@@ -123,6 +137,11 @@ class BybitAnnouncementSource(AnnouncementSource):
         if not path.startswith("/"):
             path = f"/{path}"
         return f"{self.BASE_URL}/{self.lang}{path}?category={category}"
+
+    def _build_search_api_url(self) -> str:
+        """构建搜索 API URL"""
+        lang_slug = self.lang.lower()
+        return f"{self.SEARCH_API_BASE}/announcement-posts_{lang_slug}"
     
     def fetch_latest(self, limit: int = 20) -> Sequence[RawAnnouncement]:
         """
@@ -160,29 +179,64 @@ class BybitAnnouncementSource(AnnouncementSource):
         Returns:
             RawAnnouncement 列表
         """
-        url = self._build_listing_url(category)
-        
         try:
+            # First try the search API (same as test.py)
+            items = self._fetch_items_via_api(category, limit)
+            if items:
+                return self._parse_items(items, category)
+
+            # Fallback: scrape __NEXT_DATA__ from listing page
+            url = self._build_listing_url(category)
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
             response.encoding = "utf-8"
-            
-            # 从 HTML 中提取 __NEXT_DATA__ 数据
+
             next_data = self._extract_next_data(response.text)
-            
-            # 解析公告列表
             items = self._extract_items(next_data)
-            
             if not items:
-                raise Exception(f"未找到公告数据")
-            
-            # 限制返回数量
+                raise Exception("未找到公告数据")
             items = items[:limit]
-            
             return self._parse_items(items, category)
-            
+
         except requests.RequestException as e:
             raise Exception(f"API请求失败: {e}")
+
+    def _fetch_items_via_api(self, category: str, limit: int) -> List[dict]:
+        """通过 Bybit 搜索 API 获取公告列表"""
+        url = self._build_search_api_url()
+        payload = {
+            "data": {
+                "query": "",
+                "page": 0,
+                "hitsPerPage": limit,
+                "filters": f"category.key: '{category}'",
+            }
+        }
+        headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json;charset=UTF-8",
+            "origin": self.BASE_URL,
+            "referer": self._build_listing_url(category),
+        }
+
+        # Seed cookies / risk-control status
+        listing_url = self._build_listing_url(category)
+        if self.csession is not None:
+            self.csession.get(listing_url, headers={"referer": self.BASE_URL})
+            r = self.csession.post(url, headers=headers, json=payload, timeout=self.timeout)
+        else:
+            self.session.get(listing_url, headers={"referer": self.BASE_URL}, timeout=self.timeout)
+            r = self.session.post(url, headers=headers, json=payload, timeout=self.timeout)
+
+        r.raise_for_status()
+        data = r.json()
+        hits = (
+            data.get("hits")
+            or (data.get("data", {}) or {}).get("hits")
+            or (data.get("result", {}) or {}).get("hits")
+            or []
+        )
+        return hits
     
     def _extract_next_data(self, html: str) -> dict:
         """从 HTML 中提取 __NEXT_DATA__ JSON 数据"""
@@ -221,7 +275,11 @@ class BybitAnnouncementSource(AnnouncementSource):
         for item in items:
             try:
                 # 解析发布时间（Unix 时间戳）
-                publish_time = self._parse_timestamp(item.get("publish_time"))
+                publish_time = self._parse_timestamp(
+                    item.get("publish_time")
+                    or item.get("publishTime")
+                    or item.get("publishedAt")
+                )
                 if publish_time is None:
                     publish_time = self._parse_timestamp(item.get("date_timestamp"))
                 
@@ -234,7 +292,7 @@ class BybitAnnouncementSource(AnnouncementSource):
                     continue
                 
                 # 获取 URL
-                url_value = item.get("url", "").strip()
+                url_value = (item.get("url") or item.get("slug") or "").strip()
                 if not url_value:
                     continue
                 
@@ -259,10 +317,17 @@ class BybitAnnouncementSource(AnnouncementSource):
         if value in (None, ""):
             return None
         try:
-            return datetime.fromtimestamp(int(value), tz=timezone.utc)
+            iv = int(value)
+            # Heuristic: treat millisecond timestamps
+            if iv > 10**12:
+                iv = iv / 1000
+            return datetime.fromtimestamp(iv, tz=timezone.utc)
         except (TypeError, ValueError):
             try:
-                return datetime.fromtimestamp(float(value), tz=timezone.utc)
+                fv = float(value)
+                if fv > 10**12:
+                    fv = fv / 1000
+                return datetime.fromtimestamp(fv, tz=timezone.utc)
             except (TypeError, ValueError):
                 return None
     
@@ -270,6 +335,8 @@ class BybitAnnouncementSource(AnnouncementSource):
         """关闭会话"""
         if hasattr(self, 'session'):
             self.session.close()
+        if hasattr(self, 'csession') and self.csession is not None:
+            self.csession.close()
 
 
 # 使用示例

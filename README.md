@@ -537,6 +537,7 @@ python test_tagger.py -l 10
   - requests >= 2.31.0
   - python-dotenv >= 1.0.0
   - pyyaml >= 6.0.1
+  - curl_cffi >= 0.5.10 (Bybit 公告抓取建议安装，用于更稳定的 TLS/HTTP2 指纹)
 
 ## 支持的交易所
 
