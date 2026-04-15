@@ -10,11 +10,36 @@ Huobi (HTX) 交易所公告监听实现
 并且添加到 CATEGORY_PAIRS 字典中。
 """
 
-import requests
-from typing import Sequence, List, Optional, Dict, Tuple
+import ssl
 from datetime import datetime, timezone
+from typing import Sequence, List, Optional, Dict, Tuple
+
+import requests
+from requests.adapters import HTTPAdapter
+
 from core.interface import AnnouncementSource
 from core.model import RawAnnouncement
+
+
+class _SystemCAHTTPAdapter(HTTPAdapter):
+    """Use the OS trust store instead of requests' bundled certifi CA file."""
+
+    def __init__(self, *args, **kwargs):
+        self._ssl_context = ssl.create_default_context()
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs["ssl_context"] = self._ssl_context
+        return super().init_poolmanager(
+            connections,
+            maxsize,
+            block=block,
+            **pool_kwargs,
+        )
+
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        proxy_kwargs["ssl_context"] = self._ssl_context
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
 
 
 class HuobiAnnouncementSource(AnnouncementSource):
@@ -78,6 +103,7 @@ class HuobiAnnouncementSource(AnnouncementSource):
         self.lang = self._normalize_lang(lang)
         self.timeout = timeout
         self.session = requests.Session()
+        self.session.mount("https://www.htx.com/", _SystemCAHTTPAdapter())
         # 使用默认 headers
         self.session.headers.update(requests.utils.default_headers())
         self.session.headers.update({
