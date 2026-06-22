@@ -45,6 +45,33 @@ MEXC 将于 2026年6月22日 12:30 (UTC+8) 下架 DEMO 永续合约。 请注意
         self.assertEqual(first[0].url, second[0].url)
         self.assertEqual(first[0].announcement_time, second[0].announcement_time)
 
+    def test_reader_payload_uses_real_article_links(self):
+        payload = {
+            "data": {
+                "content": "MEXC 将于 2026年6月23日 15:00 下架 TEST。",
+                "links": [
+                    ["币种下架", "https://www.mexc.com/zh-MY/announcements/delistings"],
+                    [
+                        "TEST 永续合约下架通知",
+                        "https://www.mexc.com/zh-MY/announcements/article/delisting-test-123",
+                    ],
+                ],
+            }
+        }
+        source = MexcAnnouncementSource()
+
+        announcements = source._parse_reader_payload(
+            payload,
+            "https://www.mexc.com/zh-MY/announcements/delistings",
+            10,
+        )
+
+        self.assertEqual(announcements[0].title, "TEST 永续合约下架通知")
+        self.assertEqual(
+            announcements[0].url,
+            "https://www.mexc.com/zh-MY/announcements/article/delisting-test-123",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

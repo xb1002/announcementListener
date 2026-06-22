@@ -233,10 +233,37 @@ class MexcAnnouncementSource(AnnouncementSource):
             print(f"MEXC 页面结构解析失败，尝试使用代理: {exc}")
 
         proxy_url = f"https://r.jina.ai/{url}"
-        response = self.session.get(proxy_url, timeout=max(self.timeout, 60))
+        response = self.session.get(
+            proxy_url,
+            headers={
+                "Accept": "application/json",
+                "X-With-Links-Summary": "all",
+            },
+            timeout=max(self.timeout, 60),
+        )
         response.raise_for_status()
-        response.encoding = "utf-8"
-        return self._parse_markdown_listing(response.text, url, limit)
+        return self._parse_reader_payload(response.json(), url, limit)
+
+    def _parse_reader_payload(
+        self,
+        payload: dict,
+        listing_url: str,
+        limit: int,
+    ) -> List[RawAnnouncement]:
+        """解析 Jina JSON，并将正文与真实公告链接对应。"""
+        data = payload.get("data", payload)
+        content = data.get("content", "")
+        article_links = [
+            (label, url)
+            for label, url in data.get("links", [])
+            if "/announcements/article/" in url
+        ]
+        return self._parse_markdown_content(
+            content,
+            listing_url,
+            limit,
+            article_links,
+        )
 
     def _parse_markdown_listing(
         self,
@@ -249,6 +276,18 @@ class MexcAnnouncementSource(AnnouncementSource):
         if not content:
             raise Exception("MEXC Markdown 中缺少正文")
 
+        return self._parse_markdown_content(content, listing_url, limit)
+
+    def _parse_markdown_content(
+        self,
+        content: str,
+        listing_url: str,
+        limit: int,
+        article_links: Optional[List[tuple[str, str]]] = None,
+    ) -> List[RawAnnouncement]:
+        """将 MEXC 公告正文块转换为统一模型。"""
+        article_links = article_links or []
+
         announcements = []
         for block in re.split(r"\n\s*\n", content):
             normalized = " ".join(block.split())
@@ -260,7 +299,22 @@ class MexcAnnouncementSource(AnnouncementSource):
                 continue
 
             title_match = self._MARKDOWN_TITLE_PATTERN.match(normalized)
-            title = title_match.group(1).strip() if title_match else normalized[:160].strip()
+            fallback_title = (
+                title_match.group(1).strip()
+                if title_match
+                else normalized[:160].strip()
+            )
+            link_index = len(announcements)
+            if link_index < len(article_links):
+                link_title, announcement_url = article_links[link_index]
+                title = link_title.strip() or fallback_title
+            else:
+                title = fallback_title
+                fingerprint = hashlib.sha256(
+                    normalized.encode("utf-8")
+                ).hexdigest()[:16]
+                announcement_url = f"{listing_url}#announcement-{fingerprint}"
+
             local_time = datetime(
                 int(time_match.group("year")),
                 int(time_match.group("month")),
@@ -270,13 +324,12 @@ class MexcAnnouncementSource(AnnouncementSource):
                 tzinfo=timezone(timedelta(hours=8)),
             )
             announcement_time = local_time.astimezone(timezone.utc)
-            fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
             announcements.append(RawAnnouncement(
                 exchange=self.exchange,
                 title=title,
                 announcement_time=announcement_time,
-                url=f"{listing_url}#announcement-{fingerprint}",
+                url=announcement_url,
             ))
 
             if len(announcements) >= limit:
