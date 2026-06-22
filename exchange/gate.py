@@ -13,7 +13,7 @@ import re
 import json
 import requests
 from typing import Sequence, List, Optional, Dict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from core.interface import AnnouncementSource
 from core.model import RawAnnouncement
 
@@ -40,6 +40,20 @@ class GateAnnouncementSource(AnnouncementSource):
     
     # 文章ID提取模式
     _ARTICLE_ID_PATTERN = re.compile(r"/article/(\d+)")
+    _MARKDOWN_ARTICLE_PATTERN = re.compile(
+        r"\[(?P<label>[^\]]+)\]"
+        r"\((?P<url>https?://www\.gate\.com/[^)]*/announcements/article/(?P<id>\d+))\)"
+    )
+    _MARKDOWN_DATE_SUFFIX_PATTERN = re.compile(
+        r"\s+(?P<date>\d{4}-\d{2}-\d{2})\s+[\d,]+$"
+    )
+    _MARKDOWN_RELATIVE_SUFFIX_PATTERN = re.compile(
+        r"\s+\d+\s*(?:分钟|小时|天)前\s+[\d,]+$"
+    )
+    _MARKDOWN_DETAIL_TIME_PATTERN = re.compile(
+        r"(?P<date>\d{4}-\d{2}-\d{2})\s+"
+        r"(?P<time>\d{2}:\d{2})\s*\(UTC\+8\)"
+    )
     
     # 语言别名映射
     _LANG_ALIASES: Dict[str, str] = {
@@ -180,24 +194,32 @@ class GateAnnouncementSource(AnnouncementSource):
         """
         url = self._build_listing_url(listing_path)
         
+        used_proxy = False
         try:
             # 先尝试直接访问
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
-        except requests.HTTPError as e:
-            if e.response.status_code == 403:
-                # 403 错误，尝试使用 jina.ai 代理
-                print(f"直接访问被拒绝(403)，尝试使用代理...")
-                proxy_url = f"https://r.jina.ai/{url}"
-                response = self.session.get(proxy_url, timeout=self.timeout)
-                response.raise_for_status()
-            else:
-                raise
+        except requests.RequestException as exc:
+            print(f"Gate 直连失败，尝试使用代理: {exc}")
+            proxy_url = f"https://r.jina.ai/{url}"
+            response = self.session.get(proxy_url, timeout=max(self.timeout, 60))
+            response.raise_for_status()
+            used_proxy = True
         
         response.encoding = "utf-8"
         
-        # 从 HTML 中提取 __NEXT_DATA__ 数据
-        next_data = self._extract_next_data(response.text)
+        if used_proxy:
+            return self._parse_markdown_listing(response.text, limit)
+
+        try:
+            # 优先兼容原有页面结构。
+            next_data = self._extract_next_data(response.text)
+        except Exception:
+            proxy_url = f"https://r.jina.ai/{url}"
+            proxy_response = self.session.get(proxy_url, timeout=self.timeout)
+            proxy_response.raise_for_status()
+            proxy_response.encoding = "utf-8"
+            return self._parse_markdown_listing(proxy_response.text, limit)
         
         # 解析公告列表
         items = self._extract_items(next_data)
@@ -217,6 +239,65 @@ class GateAnnouncementSource(AnnouncementSource):
                 continue
         
         return announcements
+
+    def _parse_markdown_listing(self, markdown: str, limit: int) -> List[RawAnnouncement]:
+        """解析 Jina 返回的 Gate 公告 Markdown。"""
+        announcements = []
+        seen_article_ids = set()
+
+        for match in self._MARKDOWN_ARTICLE_PATTERN.finditer(markdown):
+            article_id = match.group("id")
+            if article_id in seen_article_ids:
+                continue
+
+            label = match.group("label").strip()
+            date_match = self._MARKDOWN_DATE_SUFFIX_PATTERN.search(label)
+            if date_match:
+                announcement_time = datetime.strptime(
+                    date_match.group("date"), "%Y-%m-%d"
+                ).replace(tzinfo=timezone.utc)
+                title = label[:date_match.start()].strip()
+            elif self._MARKDOWN_RELATIVE_SUFFIX_PATTERN.search(label):
+                announcement_time = self._fetch_markdown_detail_time(match.group("url"))
+                title = self._MARKDOWN_RELATIVE_SUFFIX_PATTERN.sub("", label).strip()
+            else:
+                continue
+
+            title = re.sub(r"^置顶\s*", "", title).strip()
+            if not title or announcement_time is None:
+                continue
+
+            announcements.append(RawAnnouncement(
+                exchange=self.exchange,
+                title=title,
+                announcement_time=announcement_time,
+                url=match.group("url"),
+            ))
+            seen_article_ids.add(article_id)
+
+            if len(announcements) >= limit:
+                break
+
+        if not announcements:
+            raise Exception("未从 Markdown 中找到公告数据")
+
+        return announcements
+
+    def _fetch_markdown_detail_time(self, article_url: str) -> Optional[datetime]:
+        """从文章 Markdown 获取稳定的发布时间。"""
+        proxy_url = f"https://r.jina.ai/{article_url}"
+        response = self.session.get(proxy_url, timeout=self.timeout)
+        response.raise_for_status()
+
+        match = self._MARKDOWN_DETAIL_TIME_PATTERN.search(response.text)
+        if not match:
+            return None
+
+        local_time = datetime.strptime(
+            f"{match.group('date')} {match.group('time')}",
+            "%Y-%m-%d %H:%M",
+        ).replace(tzinfo=timezone(timedelta(hours=8)))
+        return local_time.astimezone(timezone.utc)
     
     def _extract_next_data(self, html: str) -> dict:
         """从 HTML 中提取 __NEXT_DATA__ JSON 数据"""

@@ -10,11 +10,12 @@ MEXC 交易所公告监听实现
 并且添加到 LISTING_PATHS 字典中。
 """
 
-import re
+import hashlib
 import json
+import re
 import requests
 from typing import Sequence, List, Optional, Dict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from core.interface import AnnouncementSource
 from core.model import RawAnnouncement
 
@@ -39,6 +40,11 @@ class MexcAnnouncementSource(AnnouncementSource):
         r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
         re.IGNORECASE | re.DOTALL,
     )
+    _MARKDOWN_DATETIME_PATTERN = re.compile(
+        r"(?P<year>20\d{2})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日"
+        r"(?:\s+(?P<hour>\d{1,2}):(?P<minute>\d{2}))?"
+    )
+    _MARKDOWN_TITLE_PATTERN = re.compile(r"^(.+?[。！？])(?:\s|$)")
     
     # 语言别名映射
     _LANG_ALIASES: Dict[str, str] = {
@@ -221,9 +227,65 @@ class MexcAnnouncementSource(AnnouncementSource):
                     continue
             
             return announcements
-            
-        except requests.RequestException as e:
-            raise Exception(f"API请求失败: {e}")
+        except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
+            print(f"MEXC 直连解析失败，尝试使用代理: {exc}")
+        except Exception as exc:
+            print(f"MEXC 页面结构解析失败，尝试使用代理: {exc}")
+
+        proxy_url = f"https://r.jina.ai/{url}"
+        response = self.session.get(proxy_url, timeout=max(self.timeout, 60))
+        response.raise_for_status()
+        response.encoding = "utf-8"
+        return self._parse_markdown_listing(response.text, url, limit)
+
+    def _parse_markdown_listing(
+        self,
+        markdown: str,
+        listing_url: str,
+        limit: int,
+    ) -> List[RawAnnouncement]:
+        """解析 Jina 返回的 MEXC 公告正文块。"""
+        content = markdown.partition("Markdown Content:")[2]
+        if not content:
+            raise Exception("MEXC Markdown 中缺少正文")
+
+        announcements = []
+        for block in re.split(r"\n\s*\n", content):
+            normalized = " ".join(block.split())
+            if not normalized:
+                continue
+
+            time_match = self._MARKDOWN_DATETIME_PATTERN.search(normalized)
+            if not time_match:
+                continue
+
+            title_match = self._MARKDOWN_TITLE_PATTERN.match(normalized)
+            title = title_match.group(1).strip() if title_match else normalized[:160].strip()
+            local_time = datetime(
+                int(time_match.group("year")),
+                int(time_match.group("month")),
+                int(time_match.group("day")),
+                int(time_match.group("hour") or 0),
+                int(time_match.group("minute") or 0),
+                tzinfo=timezone(timedelta(hours=8)),
+            )
+            announcement_time = local_time.astimezone(timezone.utc)
+            fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+            announcements.append(RawAnnouncement(
+                exchange=self.exchange,
+                title=title,
+                announcement_time=announcement_time,
+                url=f"{listing_url}#announcement-{fingerprint}",
+            ))
+
+            if len(announcements) >= limit:
+                break
+
+        if not announcements:
+            raise Exception("未从 MEXC Markdown 中找到公告数据")
+
+        return announcements
     
     def _extract_next_data(self, html: str) -> dict:
         """从 HTML 中提取 __NEXT_DATA__ JSON 数据"""
