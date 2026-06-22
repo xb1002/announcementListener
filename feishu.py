@@ -9,7 +9,7 @@
 import time
 import os
 import requests
-from typing import Set, Optional
+from typing import List, Set, Optional
 from pathlib import Path
 from core.interface import Notifier
 from core.model import Announcement
@@ -30,16 +30,20 @@ class FeishuNotifier(Notifier):
         初始化飞书通知器
         
         Args:
-            webhook_url: 飞书机器人 Webhook URL，如果为 None 则从环境变量 FEISHU_WEBHOOK_URL 读取
+            webhook_url: 飞书机器人 Webhook URL，多个 URL 使用英文逗号分隔；
+                如果为 None 则从环境变量 FEISHU_WEBHOOK_URL 读取
             history_file: 历史记录文件路径（相对于当前工作目录），txt 格式
             timeout: 请求超时时间（秒）
         """
-        # 从环境变量或参数获取 webhook_url
-        self.webhook_url = webhook_url or os.getenv("FEISHU_WEBHOOK_URL")
-        if not self.webhook_url:
+        webhook_value = webhook_url or os.getenv("FEISHU_WEBHOOK_URL")
+        self.webhook_urls = self._parse_webhook_urls(webhook_value)
+        if not self.webhook_urls:
             raise ValueError(
                 "未提供 webhook_url，请通过参数传入或设置环境变量 FEISHU_WEBHOOK_URL"
             )
+
+        # 保留原属性，兼容现有直接读取 webhook_url 的调用方。
+        self.webhook_url = self.webhook_urls[0]
         
         self.history_file = Path(history_file)
         self.timeout = timeout
@@ -65,33 +69,52 @@ class FeishuNotifier(Notifier):
         # 构建消息内容
         message = self._build_message(ann)
         
-        try:
-            # 发送到飞书
-            response = requests.post(
-                self.webhook_url,
-                json=message,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            
-            # 检查飞书 API 响应
-            result = response.json()
-            if result.get("code") != 0:
-                raise Exception(f"飞书 API 返回错误: {result.get('msg')}")
-            
-            # 推送成功，记录 hash
-            self.sent_hashes.add(ann.hash)
-            self._save_history(ann.hash)
-            
-            print(f"[成功] 已推送: [{ann.exchange}] {ann.title[:30]}...")
-            
-            # 等待指定时间
-            if delay > 0:
-                time.sleep(delay)
-            
-        except requests.RequestException as e:
-            print(f"[失败] 推送失败: {e}")
-            raise
+        failures = []
+        for index, webhook_url in enumerate(self.webhook_urls, 1):
+            try:
+                self._send_message(webhook_url, message)
+            except (requests.RequestException, RuntimeError, ValueError) as exc:
+                print(f"[失败] 第 {index} 个 Webhook 推送失败: {exc}")
+                failures.append((index, exc))
+
+        if failures:
+            failed_indexes = ", ".join(str(index) for index, _ in failures)
+            raise RuntimeError(f"部分飞书 Webhook 推送失败，序号: {failed_indexes}")
+
+        # 所有 Webhook 均成功后才记录历史，避免部分目标永久漏发。
+        self.sent_hashes.add(ann.hash)
+        self._save_history(ann.hash)
+
+        print(
+            f"[成功] 已推送到 {len(self.webhook_urls)} 个 Webhook: "
+            f"[{ann.exchange}] {ann.title[:30]}..."
+        )
+
+        if delay > 0:
+            time.sleep(delay)
+
+    @staticmethod
+    def _parse_webhook_urls(webhook_value: Optional[str]) -> List[str]:
+        """解析逗号分隔的 Webhook，并保持配置顺序去重。"""
+        if not webhook_value:
+            return []
+
+        return list(dict.fromkeys(
+            url.strip() for url in webhook_value.split(",") if url.strip()
+        ))
+
+    def _send_message(self, webhook_url: str, message: dict) -> None:
+        """向单个飞书 Webhook 发送消息并检查业务响应。"""
+        response = requests.post(
+            webhook_url,
+            json=message,
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        if result.get("code") != 0:
+            raise RuntimeError(f"飞书 API 返回错误: {result.get('msg')}")
     
     def _build_message(self, ann: Announcement) -> dict:
         """
@@ -232,15 +255,16 @@ class FeishuSecondaryNotifier(FeishuNotifier):
         初始化次要频道通知器
         
         Args:
-            webhook_url: 飞书机器人 Webhook URL，如果为 None 则从环境变量 FEISHU_SECONDARY_WEBHOOK_URL 读取
+            webhook_url: 飞书机器人 Webhook URL，多个 URL 使用英文逗号分隔；
+                如果为 None 则从环境变量 FEISHU_SECONDARY_WEBHOOK_URL 读取
             history_file: 历史记录文件路径
             timeout: 请求超时时间（秒）
         """
-        # 从环境变量或参数获取 webhook_url
-        self.webhook_url = webhook_url or os.getenv("FEISHU_SECONDARY_WEBHOOK_URL")
+        webhook_value = webhook_url or os.getenv("FEISHU_SECONDARY_WEBHOOK_URL")
+        self.webhook_urls = self._parse_webhook_urls(webhook_value)
         
         # 次要频道是可选的，如果没有配置则设置为不可用状态
-        self.enabled = bool(self.webhook_url)
+        self.enabled = bool(self.webhook_urls)
         
         if not self.enabled:
             print("[次要频道] 未配置次要频道 webhook，次要频道功能已禁用")
@@ -248,6 +272,8 @@ class FeishuSecondaryNotifier(FeishuNotifier):
             self.history_file = Path(history_file)
             self.timeout = timeout
             return
+
+        self.webhook_url = self.webhook_urls[0]
         
         # 调用父类初始化（但跳过 webhook_url 验证）
         self.history_file = Path(history_file)

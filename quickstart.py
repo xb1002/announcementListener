@@ -18,7 +18,8 @@ def main():
         print("FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-token")
         return
     
-    print(f"✅ Webhook 配置: {webhook_url[:50]}...")
+    webhook_count = len({url.strip() for url in webhook_url.split(",") if url.strip()})
+    print(f"✅ 主频道 Webhook 配置: {webhook_count} 个")
     print()
     
     # 创建监听器
