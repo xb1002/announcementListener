@@ -13,7 +13,7 @@ CoinEx 交易所公告监听实现
 import re
 import time
 import requests
-from typing import Sequence, List, Optional, Dict, Tuple
+from typing import Any, Sequence, List, Optional, Dict, Tuple
 from datetime import datetime, date, timedelta, timezone
 from core.interface import AnnouncementSource
 from core.model import RawAnnouncement
@@ -29,6 +29,9 @@ class CoinExAnnouncementSource(AnnouncementSource):
     
     # r.jina.ai 代理（用于绕过 Cloudflare）
     PROXY_PREFIX = "https://r.jina.ai/"
+
+    # CoinEx 公告的 Zendesk 镜像 API；官网因地区限制返回提示页时作为后备源。
+    ZENDESK_API_BASE = "https://coinex-announcement.zendesk.com/api/v2/help_center"
     
     # 公告分类 Category ID
     CATEGORY_IDS = {
@@ -59,6 +62,12 @@ class CoinExAnnouncementSource(AnnouncementSource):
         "en": "en",
         "en-us": "en",
         "en-gb": "en",
+    }
+
+    _ZENDESK_LOCALE_ALIASES: Dict[str, str] = {
+        "zh-hans": "zh-cn",
+        "zh-hant": "zh-tw",
+        "en": "en-us",
     }
     
     def __init__(
@@ -182,7 +191,9 @@ class CoinExAnnouncementSource(AnnouncementSource):
         """
         listing_url = self._build_listing_url(category_id)
         proxied_url = self._proxied_url(listing_url)
-        
+
+        markdown_error = None
+
         try:
             response = self._get_with_retries(proxied_url)
             response.encoding = "utf-8"
@@ -190,17 +201,78 @@ class CoinExAnnouncementSource(AnnouncementSource):
             # 从 Markdown 中解析公告条目
             entries = self._extract_listing_entries(response.text)
             
-            if not entries:
-                raise Exception("未找到公告数据")
-            
-            # 转换为 RawAnnouncement
-            announcements = self._convert_entries(entries)
-            
-            # 限制返回数量
-            return announcements[:limit]
+            if entries:
+                # 转换为 RawAnnouncement
+                announcements = self._convert_entries(entries)
+
+                # 限制返回数量
+                return announcements[:limit]
+
+            markdown_error = Exception("未找到公告数据")
             
         except Exception as e:
-            raise Exception(f"请求失败: {e}")
+            markdown_error = e
+
+        try:
+            return self._fetch_from_zendesk(limit)
+        except Exception as e:
+            raise Exception(f"请求失败: {markdown_error}; Zendesk 后备失败: {e}") from e
+
+    def _fetch_from_zendesk(self, limit: int) -> List[RawAnnouncement]:
+        """从 CoinEx Zendesk 公告 API 获取公告列表。"""
+        locale = self._ZENDESK_LOCALE_ALIASES.get(self.lang, self.lang)
+        url = (
+            f"{self.ZENDESK_API_BASE}/{locale}/articles.json"
+            f"?sort_by=created_at&sort_order=desc&per_page={limit}"
+        )
+        response = self._get_with_retries(url)
+        return self._parse_zendesk_articles(response.json())
+
+    def _parse_zendesk_articles(self, payload: Dict[str, Any]) -> List[RawAnnouncement]:
+        """解析 Zendesk Help Center articles API 返回的公告。"""
+        articles = payload.get("articles")
+        if not isinstance(articles, list) or not articles:
+            raise Exception("未找到公告数据")
+
+        announcements = []
+
+        for article in articles:
+            if not isinstance(article, dict) or article.get("draft"):
+                continue
+
+            title = (article.get("title") or article.get("name") or "").strip()
+            url = (article.get("html_url") or "").strip()
+            published_at = article.get("created_at") or article.get("updated_at")
+
+            if not title or not url or not published_at:
+                continue
+
+            try:
+                announcement_time = self._parse_zendesk_time(published_at)
+            except ValueError:
+                continue
+
+            announcements.append(
+                RawAnnouncement(
+                    exchange=self.exchange,
+                    title=title,
+                    announcement_time=announcement_time,
+                    url=url,
+                )
+            )
+
+        if not announcements:
+            raise Exception("未找到公告数据")
+
+        return announcements
+
+    @staticmethod
+    def _parse_zendesk_time(value: str) -> datetime:
+        """解析 Zendesk 时间，并保持旧解析器按发布日期去重的语义。"""
+        tz_utc_plus_8 = timezone(timedelta(hours=8))
+        published_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        release_date = published_at.astimezone(tz_utc_plus_8).date()
+        return datetime.combine(release_date, datetime.min.time(), tzinfo=tz_utc_plus_8)
     
     def _extract_listing_entries(self, listing_text: str) -> List[Tuple[str, str, Optional[date]]]:
         """
