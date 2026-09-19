@@ -9,19 +9,11 @@ Bybit 交易所公告监听实现
 并且添加到 CATEGORIES 字典中。
 """
 
-import re
-import json
 import requests
 from typing import Sequence, List, Optional, Dict
 from datetime import datetime, timezone
 from core.interface import AnnouncementSource
 from core.model import RawAnnouncement
-
-try:
-    # Optional: use curl_cffi for better TLS/HTTP2 fingerprinting (matches test.py)
-    from curl_cffi import requests as crequests  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    crequests = None
 
 
 class BybitAnnouncementSource(AnnouncementSource):
@@ -29,11 +21,8 @@ class BybitAnnouncementSource(AnnouncementSource):
     
     exchange = "Bybit"
     
-    # Bybit 公告基础URL
-    BASE_URL = "https://announcements.bybit.com"
-
-    # Bybit 搜索 API
-    SEARCH_API_BASE = "https://announcements.bybit.com/x-api/announcements/api/search/v1/index"
+    # Bybit 官方公告 API
+    API_URL = "https://api.bybit.com/v5/announcements/index"
     
     # 公告分类
     CATEGORIES = {
@@ -41,12 +30,6 @@ class BybitAnnouncementSource(AnnouncementSource):
         "maintenance": "maintenance_updates",    # 维护更新
         # "all": "",                                # 所有公告
     }
-    
-    # __NEXT_DATA__ script 标签匹配模式
-    _NEXT_DATA_PATTERN = re.compile(
-        r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
-        re.IGNORECASE | re.DOTALL,
-    )
     
     # 语言别名映射
     _LANG_ALIASES: Dict[str, str] = {
@@ -92,16 +75,9 @@ class BybitAnnouncementSource(AnnouncementSource):
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': self._get_accept_language(),
-            'Cache-Control': 'no-cache',
+            "Accept": "application/json",
+            "User-Agent": "announcementListener/1.0",
         })
-
-        # Prefer curl_cffi session if available (more reliable for Bybit)
-        self.csession = None
-        if crequests is not None:
-            self.csession = crequests.Session(impersonate="chrome")
     
     @classmethod
     def _normalize_lang(cls, lang: str) -> str:
@@ -115,33 +91,6 @@ class BybitAnnouncementSource(AnnouncementSource):
             parts = normalized.split("-", 1)
             return f"{parts[0].lower()}-{parts[1].upper()}"
         return normalized
-    
-    def _get_accept_language(self) -> str:
-        """根据语言代码生成 Accept-Language header"""
-        if self.lang.lower().startswith("zh"):
-            return f"{self.lang},zh;q=0.9,en;q=0.8"
-        if self.lang.lower().startswith("en"):
-            return f"{self.lang},en;q=0.9"
-        return f"{self.lang},en;q=0.8"
-    
-    def _build_listing_url(self, category: str) -> str:
-        """构建分类列表 URL"""
-        if category is None:
-            category = ""
-        return f"{self.BASE_URL}/{self.lang}/?category={category}"
-    
-    def _build_article_url(self, path: str, category: str) -> str:
-        """构建文章 URL"""
-        if path.startswith("http"):
-            return path
-        if not path.startswith("/"):
-            path = f"/{path}"
-        return f"{self.BASE_URL}/{self.lang}{path}?category={category}"
-
-    def _build_search_api_url(self) -> str:
-        """构建搜索 API URL"""
-        lang_slug = self.lang.lower()
-        return f"{self.SEARCH_API_BASE}/announcement-posts_{lang_slug}"
     
     def fetch_latest(self, limit: int = 20) -> Sequence[RawAnnouncement]:
         """
@@ -180,84 +129,27 @@ class BybitAnnouncementSource(AnnouncementSource):
             RawAnnouncement 列表
         """
         try:
-            # First try the search API (same as test.py)
-            items = self._fetch_items_via_api(category, limit)
-            if items:
-                return self._parse_items(items, category)
-
-            # Fallback: scrape __NEXT_DATA__ from listing page
-            url = self._build_listing_url(category)
-            response = self.session.get(url, timeout=self.timeout)
+            response = self.session.get(
+                self.API_URL,
+                params={
+                    "locale": self.lang,
+                    "type": category,
+                    "limit": limit,
+                },
+                timeout=self.timeout,
+            )
             response.raise_for_status()
-            response.encoding = "utf-8"
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Bybit 公告 API 请求失败: {exc}") from exc
 
-            next_data = self._extract_next_data(response.text)
-            items = self._extract_items(next_data)
-            if not items:
-                raise Exception("未找到公告数据")
-            items = items[:limit]
-            return self._parse_items(items, category)
+        if payload.get("retCode") != 0:
+            raise RuntimeError(
+                f"Bybit 公告 API 返回错误: {payload.get('retMsg', '未知错误')}"
+            )
 
-        except requests.RequestException as e:
-            raise Exception(f"API请求失败: {e}")
-
-    def _fetch_items_via_api(self, category: str, limit: int) -> List[dict]:
-        """通过 Bybit 搜索 API 获取公告列表"""
-        url = self._build_search_api_url()
-        payload = {
-            "data": {
-                "query": "",
-                "page": 0,
-                "hitsPerPage": limit,
-                "filters": f"category.key: '{category}'",
-            }
-        }
-        headers = {
-            "accept": "application/json, text/plain, */*",
-            "content-type": "application/json;charset=UTF-8",
-            "origin": self.BASE_URL,
-            "referer": self._build_listing_url(category),
-        }
-
-        # Seed cookies / risk-control status
-        listing_url = self._build_listing_url(category)
-        if self.csession is not None:
-            self.csession.get(listing_url, headers={"referer": self.BASE_URL})
-            r = self.csession.post(url, headers=headers, json=payload, timeout=self.timeout)
-        else:
-            self.session.get(listing_url, headers={"referer": self.BASE_URL}, timeout=self.timeout)
-            r = self.session.post(url, headers=headers, json=payload, timeout=self.timeout)
-
-        r.raise_for_status()
-        data = r.json()
-        hits = (
-            data.get("hits")
-            or (data.get("data", {}) or {}).get("hits")
-            or (data.get("result", {}) or {}).get("hits")
-            or []
-        )
-        return hits
-    
-    def _extract_next_data(self, html: str) -> dict:
-        """从 HTML 中提取 __NEXT_DATA__ JSON 数据"""
-        match = self._NEXT_DATA_PATTERN.search(html)
-        if not match:
-            raise Exception("未找到 __NEXT_DATA__ 数据")
-        
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError as e:
-            raise Exception(f"解析 __NEXT_DATA__ JSON 失败: {e}")
-    
-    def _extract_items(self, next_data: dict) -> List[dict]:
-        """从 __NEXT_DATA__ 中提取公告列表"""
-        page_props = next_data.get("props", {}).get("pageProps", {})
-        article_entity = page_props.get("articleInitEntity")
-        
-        if not isinstance(article_entity, dict):
-            raise Exception("未找到文章列表数据")
-        
-        return article_entity.get("list", [])
+        items = (payload.get("result") or {}).get("list") or []
+        return self._parse_items(items[:limit], category)
     
     def _parse_items(self, items: List[dict], category: str) -> List[RawAnnouncement]:
         """
@@ -276,12 +168,8 @@ class BybitAnnouncementSource(AnnouncementSource):
             try:
                 # 解析发布时间（Unix 时间戳）
                 publish_time = self._parse_timestamp(
-                    item.get("publish_time")
-                    or item.get("publishTime")
-                    or item.get("publishedAt")
+                    item.get("publishTime") or item.get("dateTimestamp")
                 )
-                if publish_time is None:
-                    publish_time = self._parse_timestamp(item.get("date_timestamp"))
                 
                 if publish_time is None:
                     continue
@@ -292,7 +180,7 @@ class BybitAnnouncementSource(AnnouncementSource):
                     continue
                 
                 # 获取 URL
-                url_value = (item.get("url") or item.get("slug") or "").strip()
+                url_value = (item.get("url") or "").strip()
                 if not url_value:
                     continue
                 
@@ -300,7 +188,7 @@ class BybitAnnouncementSource(AnnouncementSource):
                     exchange=self.exchange,
                     title=title,
                     announcement_time=publish_time,
-                    url=self._build_article_url(url_value, category)
+                    url=url_value
                 )
                 
                 announcements.append(announcement)
@@ -335,8 +223,6 @@ class BybitAnnouncementSource(AnnouncementSource):
         """关闭会话"""
         if hasattr(self, 'session'):
             self.session.close()
-        if hasattr(self, 'csession') and self.csession is not None:
-            self.csession.close()
 
 
 # 使用示例
